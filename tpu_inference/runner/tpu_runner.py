@@ -842,6 +842,13 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
         input_ids, inputs_embeds = self._get_input_ids_embeds(
             input_ids, mm_embeds, is_mm_embed)
 
+        # Barrier: ensure all MM encoder/embedding ops complete on TPU before
+        # dispatching model_fn. Prevents async overlap between vision encoder
+        # SparseCore programs and backbone SparseCore programs which can cause
+        # multi-host desync and SparseCoreSequencer halt (E0200).
+        if inputs_embeds is not None:
+            jax.block_until_ready(inputs_embeds)
+
         lora_metadata = self.lora_utils.extract_lora_metadata()
         # TODO: make _get_input_ids_embeds within this context
         # NOTE: right now, mm model will use embeddings as the input,
